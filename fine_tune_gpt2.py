@@ -1,36 +1,42 @@
-from transformers import GPT2LMHeadModel, GPT2Tokenizer, TextDataset, DataCollatorForLanguageModeling, Trainer, TrainingArguments
+import transformers
+from datasets import load_dataset
+from transformers import GPT2LMHeadModel, GPT2Tokenizer, Trainer, TrainingArguments
 
-def fine_tune_gpt2(dataset_path, output_dir="./fine_tuned_model"):
-    tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
-    model = GPT2LMHeadModel.from_pretrained("gpt2")
+# Load dataset
+dataset = load_dataset('text', data_files={'train': 'stories.txt'})
 
-    train_dataset = TextDataset(
-        tokenizer=tokenizer,
-        file_path=dataset_path,
-        block_size=128,
-    )
+# Load pre-trained model and tokenizer
+model_name = 'gpt2'
+tokenizer = GPT2Tokenizer.from_pretrained(model_name)
+model = GPT2LMHeadModel.from_pretrained(model_name)
 
-    data_collator = DataCollatorForLanguageModeling(
-        tokenizer=tokenizer,
-        mlm=False,
-    )
+# Tokenize dataset
+def tokenize_function(examples):
+    return tokenizer(examples['text'], padding='max_length', truncation=True)
 
-    training_args = TrainingArguments(
-        output_dir=output_dir,
-        overwrite_output_dir=True,
-        num_train_epochs=1,
-        per_device_train_batch_size=4,
-        save_steps=10_000,
-        save_total_limit=2,
-    )
+tokenized_datasets = dataset.map(tokenize_function, batched=True)
+tokenized_datasets.set_format('torch', columns=['input_ids', 'attention_mask'])
 
-    trainer = Trainer(
-        model=model,
-        args=training_args,
-        data_collator=data_collator,
-        train_dataset=train_dataset,
-    )
+# Training arguments
+training_args = TrainingArguments(
+    output_dir='./results',
+    overwrite_output_dir=True,
+    num_train_epochs=1,
+    per_device_train_batch_size=1,
+    save_steps=10_000,
+    save_total_limit=2,
+)
 
-    trainer.train()
+# Trainer
+trainer = Trainer(
+    model=model,
+    args=training_args,
+    train_dataset=tokenized_datasets['train'],
+)
 
-fine_tune_gpt2("stories.txt")
+# Fine-tune model
+trainer.train()
+
+# Save the model
+trainer.save_model('./fine_tuned_model')
+tokenizer.save_pretrained('./fine_tuned_model')
